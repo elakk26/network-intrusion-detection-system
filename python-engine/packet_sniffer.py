@@ -5,7 +5,8 @@ import time
 print("🛡️ NIDS Started - Monitoring Network Traffic...")
 print("Press Ctrl+C to stop\n")
 
-# Suspicious ports to watch
+SPRING_BOOT_URL = "http://localhost:8080/api/alerts/add"
+
 SUSPICIOUS_PORTS = {
     22: "SSH Brute Force",
     23: "Telnet Access",
@@ -15,17 +16,19 @@ SUSPICIOUS_PORTS = {
     1337: "Hacker Port",
 }
 
-# Track port scan attempts
 port_scan_tracker = {}
 brute_force_tracker = {}
 
 def send_alert(alert):
-    print(f"\n🚨 ALERT DETECTED!")
-    print(f"   IP: {alert['sourceIp']}")
-    print(f"   Threat: {alert['threatType']}")
-    print(f"   Port: {alert['port']}")
-    print(f"   Severity: {alert['severity']}")
-    print(f"   Time: {alert['timestamp']}\n")
+    try:
+        response = requests.post(SPRING_BOOT_URL, json=alert)
+        print(f"🚨 ALERT SENT TO SPRING BOOT!")
+        print(f"   IP: {alert['sourceIp']}")
+        print(f"   Threat: {alert['threatType']}")
+        print(f"   Severity: {alert['severity']}")
+        print(f"   Status: {response.status_code}\n")
+    except Exception as e:
+        print(f"❌ Failed to send alert: {e}")
 
 def analyze_packet(packet):
     if IP in packet:
@@ -43,53 +46,43 @@ def analyze_packet(packet):
 
         print(f"From: {src_ip} → To: {dst_ip} | Protocol: {protocol} | Port: {port}")
 
-        # Check 1 - Suspicious Port Detection
+        # Check 1 - Suspicious Port
         if port in SUSPICIOUS_PORTS:
-            alert = {
+            send_alert({
                 "sourceIp": src_ip,
                 "threatType": SUSPICIOUS_PORTS[port],
-                "port": port,
-                "severity": "HIGH",
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-            }
-            send_alert(alert)
+                "port": str(port),
+                "severity": "HIGH"
+            })
 
         # Check 2 - Port Scan Detection
-        # If same IP hits more than 5 different ports = port scanning!
         if src_ip not in port_scan_tracker:
             port_scan_tracker[src_ip] = set()
         port_scan_tracker[src_ip].add(port)
 
         if len(port_scan_tracker[src_ip]) > 5:
-            alert = {
+            send_alert({
                 "sourceIp": src_ip,
                 "threatType": "Port Scanning Detected",
-                "port": port,
-                "severity": "HIGH",
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-            }
-            send_alert(alert)
-            port_scan_tracker[src_ip] = set()  # Reset tracker
+                "port": str(port),
+                "severity": "HIGH"
+            })
+            port_scan_tracker[src_ip] = set()
 
         # Check 3 - Brute Force Detection
-        # If same IP hits same port more than 3 times = brute force!
         key = f"{src_ip}:{port}"
         if key not in brute_force_tracker:
             brute_force_tracker[key] = 0
         brute_force_tracker[key] += 1
 
         if brute_force_tracker[key] > 3:
-            alert = {
+            send_alert({
                 "sourceIp": src_ip,
                 "threatType": "Brute Force Attempt",
-                "port": port,
-                "severity": "CRITICAL",
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-            }
-            send_alert(alert)
-            brute_force_tracker[key] = 0  # Reset tracker
+                "port": str(port),
+                "severity": "CRITICAL"
+            })
+            brute_force_tracker[key] = 0
 
-# Capture 50 packets
 sniff(prn=analyze_packet, count=50)
-
 print("\n✅ Capture Complete!")
